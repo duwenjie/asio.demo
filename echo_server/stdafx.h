@@ -6,7 +6,7 @@
 #pragma once
 
 #include "targetver.h"
-
+#define BOOST_ASIO_ENABLE_HANDLER_TRACKING
 #include <stdio.h>
 #include <tchar.h>
 

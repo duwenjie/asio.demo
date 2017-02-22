@@ -7,6 +7,7 @@
 #include <boost/bind.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/enable_shared_from_this.hpp>
+#include <boost/thread.hpp>
 #include <string>
 
 using namespace boost::asio;
@@ -69,10 +70,16 @@ public:
 };
 
 
-struct Server
+struct Server : public boost::enable_shared_from_this<Server>
 {
-	Server(io_service& service, ip::tcp::endpoint& ep) 
-		: service_(service), accept_(service_, ep)
+	Server(io_service* services, ip::tcp::endpoint& ep) 
+		: service_(services[0]), accept_(services[1], ep), timer_(services[0], boost::posix_time::seconds(3600))
+	{
+		start_accept();	
+		timer_.async_wait(boost::bind(&Server::timeout_handler, this, _1));
+	}
+
+	void start_accept()
 	{
 		tcpSess_ptr session = boost::shared_ptr<TcpSession>(new TcpSession(service_)); 
 		accept_.async_accept(session->get_socket(), boost::bind(&Server::accept_handler, this, session, _1));
@@ -96,17 +103,30 @@ struct Server
 		accept_.async_accept(ptr->get_socket(), boost::bind(&Server::accept_handler, this, ptr, _1));
 	}
 
+	void timeout_handler(const boost::system::error_code& ec)
+	{
+		if(ec)
+			std::cout << ec.message() << std::endl;
+		timer_.async_wait(boost::bind(&Server::timeout_handler, this, _1));
+	}
+
 private:
 	io_service& service_;
 	ip::tcp::acceptor accept_;
+	deadline_timer timer_;
 };
 
+void run_service(io_service* service)
+{
+	service->run();
+}
 
 int _tmain(int argc, _TCHAR* argv[])
 {
-	io_service service;
+	io_service services[2];
 	ip::tcp::endpoint ep(ip::address_v4::any(), 12345);
-	Server server(service, ep);
-	service.run();
+	Server server(services, ep);
+	boost::thread(boost::bind(run_service, &services[0]));
+	services[1].run();
 	return 0;
 }
